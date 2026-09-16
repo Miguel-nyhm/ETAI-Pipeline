@@ -1,4 +1,16 @@
-# Baseline Predictive Pipeline -- ETAI
+## Student Number and Name
+
+Number:20260658
+Name:Miguel Guerreiro
+
+## WEEK 2
+
+Logistic Regression:
+Decision Trees:
+
+Conclusion:
+
+## Baseline Predictive Pipeline -- ETAI
 
 This is the **starting point** for your semester project: a small but *complete* predictive pipeline -- every piece a real project needs (entry point, config, data loading, preprocessing, model, evaluation), just kept as simple as possible for now.
 
