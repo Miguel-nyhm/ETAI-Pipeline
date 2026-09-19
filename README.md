@@ -1,14 +1,15 @@
 ## Student Number and Name
 
 Number:20260658
+
 Name:Miguel Guerreiro
 
 ## WEEK 2
 
-Logistic Regression:
-Decision Trees:
+Logistic regression is the better model, and the decision trees model overfits. We got a 0.829 train accuracy on the trees but a test accuracy of 0.626. On the other hand logistic regression sits at 0.679 train/0.678 test with almost no gap.
 
-Conclusion:
+The tree grows until it memorises the training data, so the high training score doesn't survive contact with unseen data. Logistic regression is a simpler and more stable model, so it generalises.
+
 
 ## Baseline Predictive Pipeline -- ETAI
 
