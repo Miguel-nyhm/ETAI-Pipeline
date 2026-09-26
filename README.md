@@ -8,6 +8,9 @@ Name:Miguel Guerreiro
 
 After this week's changes we see a drop in test accuracy in both logistic regression and decision trees. This is actually a healthier result since after cleaning the data, we have dropped duplicate rows which were probably inflating the week 2's test accuracy. We also have fewer rows after dropping all the new NaN rows. And we are still missing the preprocessing of the data which actually might improve the accuracy. After canonicalizing, we do get real groups now and clean comparisons between our model's fpr and COMPAS's fpr scores.
 
+Logistic regression: test accuracy 0.655 (near zero train-test gap)
+Decision tree: test accuracy 0.607 (0.192 gap)
+
 Logistic regression still is the best model and the decision tree still overfits. Cleaning the data does not fix overfitting.
 
 ## WEEK 2
