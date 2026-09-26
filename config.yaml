@@ -11,10 +11,51 @@ split:
   test_size: 0.2
   random_state: 42
 
+# week 3 -- drives data_diagnostics.py (diagnosis) and clean_dataset (cleaning).
+diagnostics:
+  id_column: "id"                                              # find_duplicates / clean_dataset
+  candidate_predictors: ["sex", "race", "age_cat", "c_charge_degree", "score_text"]  # test_missingness_mechanism
+
+  # numeric columns that load as text purely because of a placeholder token
+  numeric_text_columns: ["priors_count", "prior_offenses"]     # clean_dataset
+  placeholder_tokens: ["-", "?", "n/a", "N/A", "na", "NA", ""] # clean_dataset
+
+  validity_rules:                                              # flag_invalid_values / clean_dataset
+    age: {min: 18, max: 100}
+    decile_score: {min: 1, max: 10}
+    juv_fel_count: {min: 0}
+    priors_count: {min: 0, max: 60}
+
+  # one canonical spelling per category (everything else -> that, placeholders -> NaN)
+  canonical_categories:                                        # clean_dataset
+    sex:
+      male: "Male"
+      female: "Female"
+    race:
+      african-american: "African-American"
+      african american: "African-American"
+      caucasian: "Caucasian"
+      hispanic: "Hispanic"
+      other: "Other"
+      asian: "Asian"
+      native american: "Native American"
+    c_charge_degree:
+      f: "F"
+      felony: "F"
+      m: "M"
+      misdemeanor: "M"
+    score_text:
+      low: "Low"
+      medium: "Medium"
+      high: "High"
+
+  # perfectly redundant columns found via multicollinearity (correlation + VIF)
+  redundant_columns: ["prior_offenses", "age_in_months", "juvenile_total"]  # clean_dataset
+
 model:
-  type:  "decision_tree"
+  type: "decision_tree"
   params: {}
-   # max_iter: 1000
+    #max_iter: 2000
 
 output:
   results_dir: "results"   # each run's full report is saved here as a timestamped .txt file
