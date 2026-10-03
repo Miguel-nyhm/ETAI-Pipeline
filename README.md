@@ -4,6 +4,10 @@ Number:20260658
 
 Name:Miguel Guerreiro
 
+## WEEK 4
+
+Evaluation moved from a single train/test split (weeks 2–3) to stratified 5-fold cross-validation, with a 20% test set now locked away. The difference is reliability: a single split gave one number that swung several points depending on the seed, while CV reports a stable mean ± std over five folds. Under CV, logistic regression scores 0.672 ± 0.013 (gap +0.003), the decision tree 0.610 ± 0.018 (gap +0.085), and the new random forest 0.650 ± 0.018 (gap +0.083), all comfortably above the dummy baseline's 0.549. Logistic regression remains the best model and generalizes cleanly; the tree and forest overfit (large train–validation gaps) and the forest, though more powerful in principle, doesn't beat the simple linear model out of the box. The headline is that cross-validation didn't change which model wins, but it tells us how much to trust that answer — and that the single-split scores from earlier weeks were one lucky (or unlucky) draw, not a dependable estimate.
+
 ## WEEK 3
 
 After this week's changes we see a drop in test accuracy in both logistic regression and decision trees. This is actually a healthier result since after cleaning the data, we have dropped duplicate rows which were probably inflating the week 2's test accuracy. We also have fewer rows after dropping all the new NaN rows. And we are still missing the preprocessing of the data which actually might improve the accuracy. After canonicalizing, we do get real groups now and clean comparisons between our model's fpr and COMPAS's fpr scores.
