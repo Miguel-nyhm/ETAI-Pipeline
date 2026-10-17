@@ -4,6 +4,10 @@ Number:20260658
 
 Name:Miguel Guerreiro
 
+## WEEK 5/6
+
+Tuning lifts the tree from 0.610 → 0.677, answering the Week-4 question “is it the tree or its defaults?” — it was the defaults. A properly regularised tree (shallow depth, large minimum leaf size) now matches logistic regression and no longer overfits. The nested-CV figure is the honest estimate: the single tuning run’s best inner score was 0.679, slightly optimistic (the winner’s curse), and the five outer folds each selected different depths — because nested CV scores the tuning procedure, not one fixed depth.
+
 ## WEEK 4
 
 Evaluation moved from a single train/test split (weeks 2–3) to stratified 5-fold cross-validation, with a 20% test set now locked away. The difference is reliability: a single split gave one number that swung several points depending on the seed, while CV reports a stable mean ± std over five folds. Under CV, logistic regression scores 0.672 ± 0.013 (gap +0.003), the decision tree 0.610 ± 0.018 (gap +0.085), and the new random forest 0.650 ± 0.018 (gap +0.083), all comfortably above the dummy baseline's 0.549. Logistic regression remains the best model and generalizes cleanly; the tree and forest overfit (large train–validation gaps) and the forest, though more powerful in principle, doesn't beat the simple linear model out of the box. The headline is that cross-validation didn't change which model wins, but it tells us how much to trust that answer — and that the single-split scores from earlier weeks were one lucky (or unlucky) draw, not a dependable estimate.
