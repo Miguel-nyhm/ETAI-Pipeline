@@ -4,6 +4,20 @@ Number:20260658
 
 Name:Miguel Guerreiro
 
+## WEEK 5/6
+
+<!-- nested CV, accuracy, 30 trials, 5 outer x 5 inner folds, random_state=42 -->
+| Model | Default: CV mean ± std (gap) | Tuned: nested CV mean ± std (gap) | Tuning score (best trial) | Chosen hyperparameters |
+|---|---|---|---|---|
+| Logistic regression | 0.672 ± 0.013 (+0.003) | — | — | — |
+| Decision tree | 0.610 ± 0.018 (+0.085) | 0.672 ± 0.017 (+0.013) | 0.679 | max_depth=6, min_samples_leaf=101, criterion=gini |
+| Random forest | 0.650 ± 0.019 (+0.082) | 0.681 ± 0.015 (+0.009) | 0.683 | max_depth=22, min_samples_leaf=42, max_features=0.5 |
+| Oblique random forest | _pending full run_ | _pending_ | _pending_ | _pending_ |
+| AdaBoost | 0.676 ± 0.012 (+0.006) | 0.682 ± 0.017 (+0.004) | 0.684 | estimator__max_depth=4, n_estimators=220, learning_rate=0.0251 |
+
+AdaBoost gives the best honest score (0.682 tuned nested CV), with the random forest a hair behind (0.681); both beat the tuned decision tree and logistic regression (~0.672). The leads are smaller than the ~0.015–0.017 fold-to-fold std, though, so no model is convincingly ahead — I'd report AdaBoost at **0.682 ± 0.017**, noting the gap over logistic regression isn't larger than the noise. The chosen hyperparameters match how each model controls overfitting: the lone decision tree must stay shallow (`max_depth=6`) or it overfits, whereas the random forest can afford deep trees (`max_depth=22`) because averaging over bootstrap samples tames the variance; AdaBoost prefers slightly deeper base trees (depth 4) but a very small learning rate (0.025), i.e. many small corrective steps rather than a few aggressive ones.
+
+
 ## WEEK 4
 
 Evaluation moved from a single train/test split (weeks 2–3) to stratified 5-fold cross-validation, with a 20% test set now locked away. The difference is reliability: a single split gave one number that swung several points depending on the seed, while CV reports a stable mean ± std over five folds. Under CV, logistic regression scores 0.672 ± 0.013 (gap +0.003), the decision tree 0.610 ± 0.018 (gap +0.085), and the new random forest 0.650 ± 0.018 (gap +0.083), all comfortably above the dummy baseline's 0.549. Logistic regression remains the best model and generalizes cleanly; the tree and forest overfit (large train–validation gaps) and the forest, though more powerful in principle, doesn't beat the simple linear model out of the box. The headline is that cross-validation didn't change which model wins, but it tells us how much to trust that answer — and that the single-split scores from earlier weeks were one lucky (or unlucky) draw, not a dependable estimate.
