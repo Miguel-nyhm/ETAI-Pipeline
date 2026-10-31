@@ -65,11 +65,15 @@ preprocessing:
 
 # Week 4: how models are evaluated -- stratified k-fold CV on the development set.
 # These are the OUTER folds for nested CV too. Same random_state = same folds every run.
+# Week 7: report many metrics every run; `selection_metric` (one of them) is what tuning
+# maximises and what runs are ranked by. fbeta_<beta> weights recall beta times as much as
+# precision. (Replaces the single `scoring` key from weeks 4-6.)
 cv:
   n_splits: 5
   shuffle: true
   random_state: 42
-  scoring: "accuracy"
+  metrics: ["accuracy", "balanced_accuracy", "precision", "recall", "f1", "fbeta_2", "roc_auc", "average_precision"]
+  selection_metric: "roc_auc"    # threshold-free, unaffected by the class imbalance -- what we tune and rank on
   n_jobs: 1             # -1 = all cores (pays off for slow models, e.g. random forest)
 
 # Week 5: hyperparameter tuning. The tuning code is generic; it reads the search space
@@ -100,17 +104,39 @@ tuning:
       model__estimator__max_depth: {type: int,   low: 1,    high: 8}
       model__n_estimators:         {type: int,   low: 25,   high: 400, log: true}
       model__learning_rate:        {type: float, low: 0.01, high: 1.0, log: true}
+    # week 6 (boosting): both boosters tune the number of trees, the step size and the tree
+    # size together -- more trees can overfit, so small steps and shallow/narrow trees.
+    # (naive_bayes has nothing worth tuning here, so it has no search space: untuned only.)
+    gradient_boosting:
+      model__n_estimators:      {type: int,   low: 25,       high: 500, log: true}
+      model__learning_rate:     {type: float, low: 0.01,     high: 0.5, log: true}
+      model__max_depth:         {type: int,   low: 1,        high: 6}
+      model__min_samples_leaf:  {type: int,   low: 1,        high: 200, log: true}
+      model__subsample:         {type: float, low: 0.5,      high: 1.0}
+    hist_gradient_boosting:
+      model__max_iter:          {type: int,   low: 25,       high: 500, log: true}
+      model__learning_rate:     {type: float, low: 0.01,     high: 0.5, log: true}
+      model__max_leaf_nodes:    {type: int,   low: 2,        high: 63,  log: true}
+      model__min_samples_leaf:  {type: int,   low: 5,        high: 200, log: true}
+      model__l2_regularization: {type: float, low: 0.000001, high: 10.0, log: true}
 
 # The model main.py runs this time. Switch `type` (and params) to tune a different model;
 # compare_models.py tunes several at once into the README comparison table.
 model:
-  type: "random_forest"
-  params: {random_state: 42, n_jobs: -1}
-  # type options: dummy | logistic_regression | decision_tree | random_forest |
-  #               oblique_random_forest | adaboost
-  # examples:
+  type: "gradient_boosting"
+  params: {random_state: 42}
+  # type options: dummy | logistic_regression | naive_bayes | decision_tree | random_forest |
+  #               oblique_random_forest | adaboost | gradient_boosting | hist_gradient_boosting
+  # Other models' params, to swap in. class_weight "balanced" weights each class by 1 / its
+  # frequency (GradientBoostingClassifier and GaussianNB have no class_weight).
+  #   type: "logistic_regression"    params: {max_iter: 2000, class_weight: balanced}
+  #   type: "naive_bayes"            params: {}
+  #   type: "decision_tree"          params: {random_state: 42, class_weight: balanced}
+  #   type: "random_forest"          params: {n_estimators: 200, random_state: 42, n_jobs: -1, class_weight: balanced}
   #   type: "oblique_random_forest"  params: {n_estimators: 200, n_components: 10, random_state: 42, n_jobs: -1}
   #   type: "adaboost"               params: {max_depth: 1, n_estimators: 200, learning_rate: 1.0, random_state: 42}
+  #   type: "hist_gradient_boosting" params: {random_state: 42, class_weight: balanced}
 
 output:
-  results_dir: "results"   # each run's full report is saved here as a timestamped .txt file
+  results_dir: "results"            # each run's full report is saved here as a timestamped .txt file
+  scoreboard: "results/runs.csv"    # week 7: one row per run, appended -- the model comparison board

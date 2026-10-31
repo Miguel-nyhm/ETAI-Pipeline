@@ -4,6 +4,27 @@ Number:20260658
 
 Name:Miguel Guerreiro
 
+## WEEK 7
+
+Evaluation moved from a single accuracy number to **eight metrics computed from out-of-fold probabilities**, with **ROC-AUC** as the selection metric (what tuning maximises and what the board ranks by). Every model so far is scored on the same five folds, untuned and tuned (nested CV), against a no-model floor (a dummy). `results/runs.csv` keeps one row per run.
+
+<!-- selection metric: roc_auc · 8 metrics · 5 outer x 5 inner folds · 30 trials · random_state=42 -->
+| Model | Untuned ROC-AUC | Tuned ROC-AUC (nested) | Chosen hyperparameters |
+|---|---|---|---|
+| Dummy (floor) | 0.500 | — | — |
+| Logistic regression | 0.718 | — | — |
+| Naive Bayes | 0.685 | — | — |
+| Decision tree | 0.610 | 0.717 ± 0.017 | max_depth=5, min_samples_leaf=115, criterion=gini |
+| Random forest | 0.684 | 0.725 ± 0.015 | max_depth=24, min_samples_leaf=34, max_features=0.5 |
+| Oblique random forest | 0.685 | 0.726 ± 0.015 | tree__max_depth=12, tree__min_samples_leaf=87, project__n_components=8 |
+| AdaBoost | 0.723 | 0.727 ± 0.015 | estimator__max_depth=4, n_estimators=55, learning_rate=0.167 |
+| Gradient boosting | 0.727 | 0.727 ± 0.014 | n_estimators=426, learning_rate=0.012, max_depth=3, min_samples_leaf=2, subsample=0.766 |
+| HistGradientBoosting | 0.717 | 0.728 ± 0.016 | max_iter=92, learning_rate=0.095, max_leaf_nodes=6, min_samples_leaf=84, l2_regularization=0.0008 |
+
+**Selection metric — ROC-AUC.** I rank on ROC-AUC because it scores how well the model *orders* people by risk across every threshold, rather than its accuracy at one arbitrary 0.5 cut-off, and because it isn't distorted by the class imbalance (~45% reoffend) the way raw accuracy is. It's also the one metric every model exposes through `predict_proba`, so the whole board compares on equal terms; the operating threshold (recall vs precision) is a separate, later choice.
+
+The three boosters sit at the top (HistGradientBoosting 0.728, gradient boosting and AdaBoost 0.727), but their lead over tuned logistic regression (0.718) and the random forests (0.725–0.726) is smaller than the ~0.015 fold-to-fold std, so no model is convincingly ahead — I'd report **HistGradientBoosting at 0.728 ± 0.016**, while noting a plain logistic regression is within noise of it and far cheaper to fit and explain. Tuning helps the high-variance models most (the lone decision tree jumps 0.610 → 0.717, the forests ~0.68 → ~0.73) and barely moves the already-regularised boosters. Every model clears the 0.500 floor comfortably; Naive Bayes (0.685) is the weakest real model, as its "features independent given the class" assumption is wrong for these correlated counts.
+
 ## WEEK 5/6
 
 <!-- nested CV, accuracy, 30 trials, 5 outer x 5 inner folds, random_state=42 -->
@@ -76,6 +97,7 @@ This table is updated after each practical class, so you can always see what cha
 | Week | Practical class focus | Added to the pipeline |
 |------|------------------------|------------------------|
 | 2 | Introduction & baseline pipeline | Initial version: project structure, a single naive train/test split (no cross-validation), minimal preprocessing (drop rows with missing values, one-hot encode categoricals), logistic regression baseline, a first (deliberately simple) fairness check comparing our model's and COMPAS's own false-positive rate by race, train-vs-test accuracy reporting (to start spotting overfitting), and each run's full report saved automatically to `results/` |
+| 6–7 | Boosting & probability-based metrics | `gradient_boosting`, `hist_gradient_boosting` and `naive_bayes` added to `src/model.py`; evaluation rewritten to score out-of-fold **probabilities** on eight metrics with `roc_auc` as the selection metric (`src/evaluate.py`, `src/tuning.py`); a no-model floor (dummy) and a persistent scoreboard at `results/runs.csv` (`src/results.py`, `main.py`); `compare_models.py` fills the whole board in one run |
 
 ## Environment setup
 

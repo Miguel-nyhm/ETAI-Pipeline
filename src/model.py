@@ -2,7 +2,11 @@
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, BaggingClassifier
+from sklearn.ensemble import (
+    RandomForestClassifier, AdaBoostClassifier, BaggingClassifier,
+    GradientBoostingClassifier, HistGradientBoostingClassifier,
+)
+from sklearn.naive_bayes import GaussianNB
 from sklearn.random_projection import SparseRandomProjection
 from sklearn.pipeline import Pipeline
 
@@ -46,6 +50,12 @@ _MODELS = {
     "oblique_random_forest": oblique_random_forest,
     # ...and trees grown in sequence, each re-weighting the rows the last ones got wrong.
     "adaboost": adaboost,
+    # week 6 (boosting): regression trees fit to the gradient of the loss, summed in log-odds;
+    # the binned (histogram) version is the same algorithm, much faster on large data...
+    "gradient_boosting": GradientBoostingClassifier,
+    "hist_gradient_boosting": HistGradientBoostingClassifier,
+    # ...and a probabilistic baseline that assumes the features are independent given the class.
+    "naive_bayes": GaussianNB,
 }
 
 
