@@ -4,6 +4,22 @@ Number:20260658
 
 Name:Miguel Guerreiro
 
+## WEEK 8
+
+Added **XGBoost** (`XGBClassifier`) and **feature selection** as a learned Pipeline step. The selector (`VoteSelector`) keeps the features that at least `min_votes` of three models back — a random forest and gradient boosting (above-average importance) and an L1 logistic regression (non-zero coefficient). It is fitted on each fold's training rows only (never before the split), and `min_votes` is tuned together with the model under nested CV. XGBoost adds brakes the earlier boosters don't have — `gamma` (minimum gain to split), `min_child_weight` (minimum leaf weight) and `reg_alpha`/`reg_lambda` (L1/L2) — plus native missing-value handling.
+
+**Does feature selection pay off?** XGBoost tuned, with and without selection, on the same five folds:
+
+<!-- selection metric: roc_auc · 30 trials · 5 outer x 5 inner folds · random_state=42 -->
+| XGBoost (tuned, nested CV) | ROC-AUC | Features kept | Chosen hyperparameters (abridged) |
+|---|---|---|---|
+| With selection (`min_votes` tuned → 1) | 0.725 ± 0.013 | 2 of 10: `age`, `priors_count` | max_depth=3, lr=0.23, min_child_weight=1.8, gamma=4.0, reg_lambda=0.08, reg_alpha=0.05, subsample=0.57, colsample=0.63, n_estimators=92 |
+| Without selection | 0.728 ± 0.015 | all 10 | max_depth=7, lr=0.11, min_child_weight=28, gamma=4.1, reg_lambda=0.24, subsample=0.85, colsample=0.56, n_estimators=94 |
+
+Corrected paired t-test (Nadeau–Bengio), with − without: **mean difference −0.003, wins 2/5 folds, t = −0.89, p = 0.42**.
+
+Feature selection drops 8 of the 10 columns and the tuned score falls only from 0.728 to 0.725 — a 0.003 gap, smaller than the ~0.015 fold-to-fold std, and the corrected test confirms it isn't significant (p = 0.42). So the two-feature model (`age` + `priors_count`) is statistically **as good as** the full one. Even with `min_votes` tuned down to 1, only those two features got any votes at all — the other eight carry almost no signal. I'd keep selection as a legitimate option when a simpler, more explainable model matters (two inputs instead of ten, at no measurable cost in ROC-AUC), but I wouldn't claim it improves accuracy: on COMPAS the signal is just "more priors, younger," which XGBoost finds with or without the selector. One telling detail — without selection, XGBoost leans harder on its own brakes to tame the noise columns (`min_child_weight` jumps from ~2 to 28, `max_depth` from 3 to 7), regularization doing the job the selector would have done up front.
+
 ## WEEK 7
 
 Evaluation moved from a single accuracy number to **eight metrics computed from out-of-fold probabilities**, with **ROC-AUC** as the selection metric (what tuning maximises and what the board ranks by). Every model so far is scored on the same five folds, untuned and tuned (nested CV), against a no-model floor (a dummy). `results/runs.csv` keeps one row per run.
@@ -98,6 +114,7 @@ This table is updated after each practical class, so you can always see what cha
 |------|------------------------|------------------------|
 | 2 | Introduction & baseline pipeline | Initial version: project structure, a single naive train/test split (no cross-validation), minimal preprocessing (drop rows with missing values, one-hot encode categoricals), logistic regression baseline, a first (deliberately simple) fairness check comparing our model's and COMPAS's own false-positive rate by race, train-vs-test accuracy reporting (to start spotting overfitting), and each run's full report saved automatically to `results/` |
 | 6–7 | Boosting & probability-based metrics | `gradient_boosting`, `hist_gradient_boosting` and `naive_bayes` added to `src/model.py`; evaluation rewritten to score out-of-fold **probabilities** on eight metrics with `roc_auc` as the selection metric (`src/evaluate.py`, `src/tuning.py`); a no-model floor (dummy) and a persistent scoreboard at `results/runs.csv` (`src/results.py`, `main.py`); `compare_models.py` fills the whole board in one run |
+| 8 | XGBoost & feature selection | `xgboost` (`XGBClassifier`) added to `src/model.py`; a learned `VoteSelector` step between preprocessing and the model, `build_pipeline` now taking a selection config and a cache `memory` folder; `corrected_paired_test` added to `src/evaluate.py`; `config.yaml` gains the `xgboost` search space and a `feature_selection` section; `main.py` tunes `select__min_votes` with the model, prints the features kept, and records the selection setting on the scoreboard (`src/results.py`) |
 
 ## Environment setup
 

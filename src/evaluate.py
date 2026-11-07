@@ -8,9 +8,28 @@ by. The reports (classification report, fairness) turn probabilities into labels
 """
 import numpy as np
 import pandas as pd
+from scipy import stats
 from sklearn.metrics import (
     classification_report, confusion_matrix, fbeta_score, get_scorer, make_scorer,
 )
+
+
+def corrected_paired_test(scores_a, scores_b, test_train_ratio: float) -> dict:
+    """
+    Corrected paired t-test (Nadeau & Bengio, 2003) for two models scored on the same CV folds.
+    Folds share most of their training rows, so their scores are correlated and the plain
+    t-test is overconfident; the variance of the differences is inflated by `test_train_ratio`
+    (validation rows / training rows per fold: 1 / (k - 1) for k-fold).
+
+    Returns the mean difference (a - b), the folds where a scores higher, t and the two-sided
+    p-value.
+    """
+    diff = np.asarray(scores_a, dtype=float) - np.asarray(scores_b, dtype=float)
+    k = len(diff)
+    se = np.sqrt((1 / k + test_train_ratio) * diff.var(ddof=1))
+    t = float(diff.mean() / se) if se > 0 else 0.0
+    p_value = float(2 * stats.t.sf(abs(t), df=k - 1))
+    return {"mean_diff": float(diff.mean()), "wins": f"{int((diff > 0).sum())}/{k}", "t": t, "p_value": p_value}
 
 
 def build_scorers(metrics: list) -> dict:
