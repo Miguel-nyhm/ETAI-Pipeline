@@ -137,7 +137,7 @@ tuning:
 # `min_votes` is a hyperparameter: when tuning is on, `search_space` joins the model's search
 # space and nested CV picks it honestly. Set enabled:false to run without selection.
 feature_selection:
-  enabled: false
+  enabled: true
   min_votes: 2                                      # 1 (keep almost all) .. 3 (keep only unanimous)
   random_state: 42
   search_space:                                     # tuned together with the model when tuning is on

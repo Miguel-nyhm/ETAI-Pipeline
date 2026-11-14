@@ -1,0 +1,65 @@
+Run: 20261114_162355
+Model: xgboost  params={'n_estimators': 300, 'learning_rate': 0.05, 'max_depth': 4, 'random_state': 42, 'n_jobs': -1}
+Feature selection: none
+Selection metric: roc_auc_ovr   metrics: ['accuracy', 'precision_macro', 'recall_macro', 'f1_macro', 'roc_auc_ovr']
+Test size: 0.2  random_state: 42
+============================================================
+
+Hyperparameters from config.yaml: {'n_estimators': 300, 'learning_rate': 0.05, 'max_depth': 4, 'random_state': 42, 'n_jobs': -1}
+
+Cross-validation (5 stratified folds, selection metric: roc_auc_ovr)
+
+ fold  train  validation   gap  accuracy  precision_macro  recall_macro  f1_macro  roc_auc_ovr
+    1  0.806       0.762 0.044     0.634            0.580         0.529     0.539        0.762
+    2  0.808       0.756 0.051     0.621            0.549         0.514     0.516        0.756
+    3  0.808       0.757 0.050     0.623            0.555         0.512     0.515        0.757
+    4  0.811       0.739 0.072     0.614            0.547         0.509     0.514        0.739
+    5  0.806       0.764 0.042     0.631            0.552         0.522     0.526        0.764
+
+                 mean   std
+accuracy        0.625 0.008
+precision_macro 0.557 0.013
+recall_macro    0.517 0.008
+f1_macro        0.522 0.011
+roc_auc_ovr     0.756 0.010
+
+roc_auc_ovr: train-validation gap mean = +0.052
+
+No-model floor (dummy, same folds): roc_auc_ovr = 0.500
+
+Out-of-fold predictions, development set (threshold 0.5):
+
+        predicted 0  predicted 1  predicted 2
+true 0         2757          284           77
+true 1          899          373          259
+true 2          367          280          475
+
+              precision    recall  f1-score   support
+
+           0       0.69      0.88      0.77      3118
+           1       0.40      0.24      0.30      1531
+           2       0.59      0.42      0.49      1122
+
+    accuracy                           0.62      5771
+   macro avg       0.56      0.52      0.52      5771
+weighted avg       0.59      0.62      0.59      5771
+
+False positive rate by race (development set, out-of-fold)
+(share NOT truly class 2, but predicted class 2)
+
+  Our model:
+    African-American     FPR = 0.10  (n=2098)
+    Asian                FPR = 0.00  (n=22)
+    Caucasian            FPR = 0.05  (n=1698)
+    Hispanic             FPR = 0.05  (n=458)
+    Native American      FPR = 0.22  (n=9)
+    Other                FPR = 0.03  (n=274)
+    unknown              FPR = 0.08  (n=90)
+
+Final model: xgboost refit on all 5771 development rows.
+Feature selection: none
+Features kept (14 of 14): ['numeric__age', 'numeric__juv_fel_count', 'numeric__juv_misd_count', 'numeric__juv_other_count', 'numeric__priors_count', 'categorical__sex_Female', 'categorical__sex_Male', 'categorical__age_cat_25 - 45', 'categorical__age_cat_Greater than 45', 'categorical__age_cat_Less than 25', 'categorical__c_charge_degree_F', 'categorical__c_charge_degree_M', 'indicators__priors_count_was_missing', 'indicators__c_charge_degree_was_missing']
+
+Scoreboard:
+            run   model  tuned feature_selection  roc_auc_ovr   std  untuned  floor
+20261114_162355 xgboost  False              none        0.756 0.010    0.756  0.500

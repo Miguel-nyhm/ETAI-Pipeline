@@ -4,6 +4,54 @@ Number:20260658
 
 Name:Miguel Guerreiro
 
+## WEEK 9 — Beyond COMPAS
+
+This week the pipeline had to leave COMPAS's binary target behind. Of the teacher's two options (new dataset / new kind of target) I took **Option B: a new kind of target** — predicting COMPAS's own three-level risk label `score_text` (**Low / Medium / High**) instead of binary `two_year_recid`. Same data, same framework; the point was to find every place the pipeline had quietly assumed *two* classes and make it class-count-agnostic, without breaking the binary run.
+
+**How to run it.** The multiclass setup lives in its own config so the original stays untouched:
+```bash
+python main.py config_multiclass.yaml      # 3-class score_text, writes to results_multiclass/
+python main.py                             # original binary run, unchanged
+```
+`main.py` now reads the config path as an argument (defaulting to `config.yaml`) and maps the string labels to integers 0/1/2 via a new `data.target_labels` key. `config_multiclass.yaml` switches the target to `score_text`, drops `decile_score` and `two_year_recid` (both leak the answer), uses one-hot encoding (which sidesteps per-class target encoding), and ranks on `roc_auc_ovr` with macro-averaged metrics. Everything writes to `results_multiclass/` so the two targets never overwrite each other.
+
+**What broke, why, and how it was fixed.** I changed one thing at a time and ran after each, logging every crash. Three of the bugs were *silent* — they don't raise an error, they just compute the wrong thing on three classes:
+
+| # | What broke | Why | Fix |
+|---|---|---|---|
+| 1 | XGBoost refused to fit — `ValueError` on string labels | `XGBClassifier` needs integer classes 0/1/2, not `"Low"/"Medium"/"High"` | map the target through `data.target_labels` in `main.py` |
+| 2 | *(silent)* out-of-fold probabilities came out as a single column | `predict_proba(...)[:, 1]` hard-codes "the positive class" — fine for 2 classes, wrong for 3 | branch: 1-D `[:, 1]` when 2 classes, the full probability matrix when more (`evaluate.py`, `tuning.py`) |
+| 3 | `ValueError: Shape of passed values (3,3), indices imply (2,2)` | the confusion matrix was built for a fixed 2×2 | `argmax` over the probability matrix + labels read from the data (`oof_classification_report`) |
+| 4 | `ValueError: expected a 1d array, got an array with shape (5771, 3)` in the fairness report | FPR was defined as "predicted positive while truly negative" — a binary idea | redefine FPR as "predicted the top class while not truly in it", `argmax` the predictions, drop the COMPAS-score comparison (COMPAS has no 3-class column to compare against) |
+| 5 | *(silent)* the feature selector's L1 voter only looked at class 0 | `lasso.coef_[0]` is the whole coefficient vector when binary, but only the *first class's* row when multiclass | `np.abs(lasso.coef_).max(axis=0)` — a feature counts if it's non-zero for *any* class |
+| 6 | `ValueError: 'liblinear' solver does not support multiclass` | `liblinear` is binary-only | branch the solver: `liblinear` for 2 classes, `saga` for 3+ |
+| 6b | *(silent)* `FutureWarning` + "penalty=l1 with l1_ratio=0.0" — L1 was being overridden to L2 | `penalty="l1"` is deprecated in scikit-learn 1.8 and was silently ignored | set `l1_ratio=1.0` instead, the supported way to ask for pure L1 |
+
+The thread running through all of these is a single buried assumption: that a classification problem has *one positive class*. It hides in the probability slice (`[:, 1]`), the 0.5 threshold, the 2×2 confusion matrix, the fairness FPR, and even the L1 selector's `coef_[0]`. Four of those crash loudly on three classes; two don't — they'd have handed me a plausible-looking but wrong number. The hardest part of "beyond COMPAS" wasn't reading the error messages, it was trusting that the *silent* spots existed and going to find them.
+
+**Does it work?** XGBoost on the three-level target, same five folds, floor is the majority-class dummy:
+
+<!-- selection metric: roc_auc_ovr · onehot · 30 trials · 5 outer x 5 inner folds · random_state=42 -->
+| XGBoost (multiclass) | roc_auc_ovr | accuracy | macro-F1 |
+|---|---|---|---|
+| No-model floor (dummy) | 0.500 | — | — |
+| Default hyperparameters | 0.749 ± 0.011 | 0.619 | 0.508 |
+| Tuned (nested CV) | **0.757 ± 0.009** | **0.630** | 0.519 |
+
+roc_auc_ovr clears the 0.75 target and accuracy sits right at 0.63, both comfortably above the 0.500 floor. Macro-F1 (0.519) is the one number that stays low, and the confusion matrix says exactly why — it's one class dragging the average down:
+
+| true ↓ / predicted → | Low | Medium | High | recall | F1 |
+|---|---|---|---|---|---|
+| **Low** (3118) | 2816 | 207 | 95 | 0.90 | 0.78 |
+| **Medium** (1531) | 929 | 349 | 253 | 0.23 | **0.30** |
+| **High** (1122) | 384 | 267 | 471 | 0.42 | 0.49 |
+
+**Medium is by far the hardest class** — recall 0.23, meaning the model catches barely one truly-Medium person in four, and pushes 61% of them (929 of 1531) into Low. That's the squishy-middle problem: Low and High sit at the ends of the risk scale with distinctive feature signatures (few priors + older vs many priors + young), but Medium has no profile of its own, so the model — rewarded for overall accuracy — mostly collapses it onto the nearest confident class. Because macro-F1 weights all three classes equally, that one weak class alone holds the macro score under the Low/High average. The fairness gap also survives the reframing: the predicted-High false-positive rate is 0.11 for African-American defendants against 0.05 for Caucasian — the same ~2× disparity the binary model showed.
+
+One honest detail on the scoreboard: the tuned run's line reads `vote(min_votes=1)`, not the `2` in the config. That isn't a mismatch — nested CV *tunes* `min_votes` alongside the model and chose 1 (keep more features), which is the whole point of tuning it honestly rather than fixing it by hand.
+
+**The binary run is untouched — proven, not assumed.** Every fix branches on the number of classes, so the original COMPAS pipeline had to come out byte-for-byte identical. It does: re-running the binary feature-selection config after all six changes reproduces the pre-Week-9 run to full floating-point precision — every fold, every tuned hyperparameter (mean `0.7249663763989602`; folds `0.72386 / 0.70295 / 0.73152 / 0.72335 / 0.73415`, identical in both runs). That byte-identical match is the real proof that "make it handle three classes" didn't quietly cost anything on two.
+
 ## WEEK 8
 
 Added **XGBoost** (`XGBClassifier`) and **feature selection** as a learned Pipeline step. The selector (`VoteSelector`) keeps the features that at least `min_votes` of three models back — a random forest and gradient boosting (above-average importance) and an L1 logistic regression (non-zero coefficient). It is fitted on each fold's training rows only (never before the split), and `min_votes` is tuned together with the model under nested CV. XGBoost adds brakes the earlier boosters don't have — `gamma` (minimum gain to split), `min_child_weight` (minimum leaf weight) and `reg_alpha`/`reg_lambda` (L1/L2) — plus native missing-value handling.
@@ -91,8 +139,9 @@ go on.
 
 ```
 .
-├── main.py                # entry point: run the whole pipeline
-├── config.yaml             # all tunable settings live here
+├── main.py                # entry point: run the whole pipeline (optional config path as 1st argument)
+├── config.yaml             # all tunable settings live here (binary target: two_year_recid)
+├── config_multiclass.yaml  # week 9: 3-class score_text target (Low/Medium/High)
 ├── requirements.txt
 ├── src/
 │   ├── data.py             # loading
@@ -101,6 +150,7 @@ go on.
 │   ├── evaluate.py         # accuracy metrics + fairness check
 │   └── results.py          # saves each run's report to disk
 ├── results/                # created automatically -- one file per run (not tracked in git)
+├── results_multiclass/     # week 9: same, for the 3-class runs (not tracked in git)
 └── data/
     ├── compas_two_year_recidivism.csv
     └── README.md            # problem description + full data dictionary
@@ -115,6 +165,7 @@ This table is updated after each practical class, so you can always see what cha
 | 2 | Introduction & baseline pipeline | Initial version: project structure, a single naive train/test split (no cross-validation), minimal preprocessing (drop rows with missing values, one-hot encode categoricals), logistic regression baseline, a first (deliberately simple) fairness check comparing our model's and COMPAS's own false-positive rate by race, train-vs-test accuracy reporting (to start spotting overfitting), and each run's full report saved automatically to `results/` |
 | 6–7 | Boosting & probability-based metrics | `gradient_boosting`, `hist_gradient_boosting` and `naive_bayes` added to `src/model.py`; evaluation rewritten to score out-of-fold **probabilities** on eight metrics with `roc_auc` as the selection metric (`src/evaluate.py`, `src/tuning.py`); a no-model floor (dummy) and a persistent scoreboard at `results/runs.csv` (`src/results.py`, `main.py`); `compare_models.py` fills the whole board in one run |
 | 8 | XGBoost & feature selection | `xgboost` (`XGBClassifier`) added to `src/model.py`; a learned `VoteSelector` step between preprocessing and the model, `build_pipeline` now taking a selection config and a cache `memory` folder; `corrected_paired_test` added to `src/evaluate.py`; `config.yaml` gains the `xgboost` search space and a `feature_selection` section; `main.py` tunes `select__min_votes` with the model, prints the features kept, and records the selection setting on the scoreboard (`src/results.py`) |
+| 9 | Beyond COMPAS — a new kind of target | `main.py` reads the config path as a command-line argument and maps string labels to integers via a new `data.target_labels` key; `config_multiclass.yaml` added for the 3-class `score_text` target (one-hot encoding, `roc_auc_ovr`, macro metrics, output to `results_multiclass/`); `src/evaluate.py`, `src/tuning.py` and `src/model.py` made class-count-agnostic (full probability matrix, `argmax` confusion matrix, top-class fairness FPR, multiclass-safe L1 selector with the `saga` solver) — every change branches on the number of classes so the binary run stays byte-identical |
 
 ## Environment setup
 

@@ -68,9 +68,15 @@ def cross_validate_pipeline(pipeline, X, y, cv, scorers: dict, selection_metric:
     for name in scorers:
         fold_scores[name] = scores[f"test_{name}"]
 
-    oof_proba = np.empty(len(X))
-    for model, val_idx in zip(scores["estimator"], scores["indices"]["test"]):
-        oof_proba[val_idx] = model.predict_proba(X.iloc[val_idx])[:, 1]
+    n_classes = len(np.unique(y))
+    if n_classes == 2:
+        oof_proba = np.empty(len(X))
+        for model, val_idx in zip(scores["estimator"], scores["indices"]["test"]):
+            oof_proba[val_idx] = model.predict_proba(X.iloc[val_idx])[:, 1]
+    else:
+        oof_proba = np.empty((len(X), n_classes))
+        for model, val_idx in zip(scores["estimator"], scores["indices"]["test"]):
+            oof_proba[val_idx] = model.predict_proba(X.iloc[val_idx])
     return fold_scores, oof_proba
 
 
@@ -89,39 +95,43 @@ def cv_report(fold_scores: pd.DataFrame, metrics: list, selection_metric: str, t
 
 def oof_classification_report(y_true, oof_proba, threshold: float = 0.5) -> str:
     """Confusion matrix and classification report of the out-of-fold predictions, as text."""
-    y_pred = (oof_proba >= threshold).astype(int)
-    cm = pd.DataFrame(confusion_matrix(y_true, y_pred), index=["true 0", "true 1"],
-                      columns=["predicted 0", "predicted 1"])
+    if oof_proba.ndim == 1:
+        y_pred = (oof_proba >= threshold).astype(int)   # binary, unchanged
+    else:
+        y_pred = oof_proba.argmax(axis=1)               # multiclass: highest-probability class
+    labels = sorted(np.unique(y_true))
+    cm = pd.DataFrame(confusion_matrix(y_true, y_pred, labels=labels),
+                    index=[f"true {c}" for c in labels],
+                    columns=[f"predicted {c}" for c in labels])
     return (f"Out-of-fold predictions, development set (threshold {threshold}):\n\n"
             f"{cm.to_string()}\n\n{classification_report(y_true, y_pred, zero_division=0)}")
 
 
-def fairness_report(y_true, oof_proba, extras: pd.DataFrame, sensitive_attr: str = "race",
-                    threshold: float = 0.5) -> str:
-    """
-    False positive rate (share of people who did not reoffend but were predicted to) per
-    group of `sensitive_attr`, for the model's out-of-fold predictions and for COMPAS's own
-    score (`score_text` other than "Low" counts as predicted to reoffend), on the same rows.
-    Rows with an unknown group are reported as "unknown". A simple check, not a full audit.
-    """
+def fairness_report(y_true, oof_proba, extras, sensitive_attr="race", threshold=0.5):
     df = extras.copy()
     df[sensitive_attr] = df[sensitive_attr].astype(object).fillna("unknown")
-    df["y_true"] = pd.Series(y_true).values
-    df["y_pred_model"] = (oof_proba >= threshold).astype(int)
-    df["y_pred_compas"] = (df["score_text"] != "Low").astype(int)
+    df["y_true"] = np.asarray(y_true)
 
-    lines = [
-        f"False positive rate by {sensitive_attr} (development set, out-of-fold)",
-        "(share of people who did NOT reoffend, but were predicted to)",
-        "",
-    ]
-    for label, col in [("Our model", "y_pred_model"), ("COMPAS's own score", "y_pred_compas")]:
+    if oof_proba.ndim == 1:                       # binary — unchanged behaviour
+        df["y_pred_model"] = (oof_proba >= threshold).astype(int)
+        df["y_pred_compas"] = (df["score_text"] != "Low").astype(int)
+        pairs = [("Our model", "y_pred_model"), ("COMPAS's own score", "y_pred_compas")]
+        positive = 1
+        subtitle = "(share of people who did NOT reoffend, but were predicted to)"
+    else:                                         # multiclass — "flag" = the top class (High)
+        positive = oof_proba.shape[1] - 1
+        df["y_pred_model"] = oof_proba.argmax(axis=1)
+        pairs = [("Our model", "y_pred_model")]
+        subtitle = f"(share NOT truly class {positive}, but predicted class {positive})"
+
+    lines = [f"False positive rate by {sensitive_attr} (development set, out-of-fold)", subtitle, ""]
+    for label, col in pairs:
         lines.append(f"  {label}:")
         for group, g in df.groupby(sensitive_attr):
-            negatives = g[g["y_true"] == 0]
+            negatives = g[g["y_true"] != positive]
             if len(negatives) == 0:
                 continue
-            fpr = (negatives[col] == 1).mean()
+            fpr = (negatives[col] == positive).mean()
             lines.append(f"    {group:<20s} FPR = {fpr:.2f}  (n={len(negatives)})")
         lines.append("")
     return "\n".join(lines)

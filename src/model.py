@@ -89,10 +89,14 @@ class VoteSelector(SelectorMixin, BaseEstimator):
     def fit(self, X, y):
         forest = RandomForestClassifier(n_estimators=200, min_samples_leaf=20, random_state=self.random_state, n_jobs=-1).fit(X, y)
         booster = GradientBoostingClassifier(random_state=self.random_state).fit(X, y)
-        lasso = LogisticRegression(l1_ratio=1.0, C=0.01, solver="liblinear").fit(X, y)
+        n_classes = len(np.unique(y))
+        if n_classes == 2:
+            lasso = LogisticRegression(l1_ratio=1.0, C=0.01, solver="liblinear").fit(X, y)   # binary, unchanged
+        else:
+            lasso = LogisticRegression(l1_ratio=1.0, C=0.01, solver="saga", max_iter=5000).fit(X, y)
         self.votes_ = ((forest.feature_importances_ > forest.feature_importances_.mean()).astype(int)
                        + (booster.feature_importances_ > booster.feature_importances_.mean())
-                       + (np.abs(lasso.coef_[0]) > 1e-8))
+                       + (np.abs(lasso.coef_).max(axis=0) > 1e-8))
         self.support_ = self.votes_ >= self.min_votes
         return self
 

@@ -20,6 +20,7 @@ The locked test set is set aside and NOT touched here.
 from datetime import datetime
 import tempfile
 import shutil
+import sys
 
 import yaml
 import optuna
@@ -50,7 +51,8 @@ def load_config(path: str = "config.yaml") -> dict:
 
 
 def main():
-    config = load_config()
+    config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
+    config = load_config(config_path)
     run = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_type = config["model"]["type"]
 
@@ -60,6 +62,9 @@ def main():
 
     mnar_sources = config["preprocessing"].get("mnar_indicator_sources", [])
     X, y, extras = split_features_target(df_clean, config["data"], mnar_sources)
+    labels = config["data"].get("target_labels")       # add from here
+    if labels:
+        y = y.map({name: i for i, name in enumerate(labels)})
 
     # From here on, every decision uses the development set only; the test set stays locked.
     X_dev, X_test, y_dev, y_test, extras_dev, extras_test = split_dev_test(

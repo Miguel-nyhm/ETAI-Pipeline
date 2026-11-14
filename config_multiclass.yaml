@@ -1,0 +1,167 @@
+# Baseline pipeline configuration.
+# Nothing here is hardcoded in the source files below -- everything tunable lives in this one place.
+
+data:
+  path: "data/compas_two_year_recidivism.csv"
+  target: "score_text"
+  sensitive_attr: "race"          # excluded from model features, used only to audit fairness
+  drop_columns: ["id", "decile_score", "two_year_recid"]  # identifiers / COMPAS's own score, not our model's inputs
+  target_labels: ["Low", "Medium", "High"]
+
+# Week 4: the FINAL TEST SET. Carved out once, stratified, and locked: never used to
+# fit, tune, compare or choose anything. Do not change these two values after this week --
+# a new seed would silently give you a different (already partly "seen") test set.
+test_set:
+  size: 0.2
+  random_state: 42
+
+# Drives clean_dataset (cleaning rules from the Week 3 diagnosis).
+diagnostics:
+  id_column: "id"
+  numeric_text_columns: ["priors_count", "prior_offenses"]   # load as text because of placeholder tokens
+  placeholder_tokens: ["-", "?", "n/a", "N/A", "na", "NA", ""]
+
+  validity_rules:                                             # impossible values -> NaN
+    age: {min: 18, max: 100}
+    decile_score: {min: 1, max: 10}
+    juv_fel_count: {min: 0}
+    priors_count: {min: 0, max: 60}
+
+  canonical_categories:                                       # spelling variants -> one label; placeholders -> NaN
+    sex:
+      male: "Male"
+      female: "Female"
+    race:
+      african-american: "African-American"
+      african american: "African-American"
+      caucasian: "Caucasian"
+      hispanic: "Hispanic"
+      other: "Other"
+      asian: "Asian"
+      native american: "Native American"
+    c_charge_degree:
+      f: "F"
+      felony: "F"
+      m: "M"
+      misdemeanor: "M"
+    score_text:
+      low: "Low"
+      medium: "Medium"
+      high: "High"
+
+  redundant_columns: ["prior_offenses", "age_in_months", "juvenile_total"]  # multicollinearity (corr + VIF)
+
+# Week 4: the preprocessing recipe. Rules, not fitted values -- the medians, category
+# means and scaling stats are learned again from the training rows of every split.
+preprocessing:
+  encoder: "onehot"      # compact (one column per feature) and informative
+  scaler: "robust"       # counts have extreme values; median/IQR doesn't let them set the scale
+  numeric_features: ["age", "juv_fel_count", "juv_misd_count", "juv_other_count", "priors_count"]
+  categorical_features: ["sex", "age_cat", "c_charge_degree"]
+  mnar_indicator_sources: ["priors_count", "c_charge_degree"]   # get a _was_missing flag
+  random_state: 42
+  imputation:
+    numeric_strategy: "median"
+    categorical_strategy: "most_frequent"
+
+# Week 4: how models are evaluated -- stratified k-fold CV on the development set.
+# These are the OUTER folds for nested CV too. Same random_state = same folds every run.
+# Week 7: report many metrics every run; `selection_metric` (one of them) is what tuning
+# maximises and what runs are ranked by. fbeta_<beta> weights recall beta times as much as
+# precision. (Replaces the single `scoring` key from weeks 4-6.)
+cv:
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+  metrics: ["accuracy", "precision_macro", "recall_macro", "f1_macro", "roc_auc_ovr"]
+  selection_metric: "roc_auc_ovr"
+  n_jobs: 1             # -1 = all cores (pays off for slow models, e.g. random forest)
+
+# Week 5: hyperparameter tuning. The tuning code is generic; it reads the search space
+# that matches `model.type` below. Keys are Pipeline parameter names (step__param).
+# Ensembles take minutes per run: set enabled:false or a small n_trials while testing.
+tuning:
+  enabled: true
+  n_trials: 30
+  n_splits: 5          # INNER folds used to score each trial
+  random_state: 42     # seeds the sampler and those folds
+  search_spaces:
+    decision_tree:
+      model__max_depth:        {type: int, low: 1, high: 20}
+      model__min_samples_leaf: {type: int, low: 1, high: 200, log: true}
+      model__criterion:        {type: categorical, choices: ["gini", "entropy"]}
+    random_forest:
+      model__max_depth:        {type: int, low: 2, high: 30}
+      model__min_samples_leaf: {type: int, low: 1, high: 200, log: true}
+      model__max_features:     {type: categorical, choices: ["sqrt", 0.5, 1.0]}
+    # week 5 (ensembles): the oblique forest tunes its trees (through the Bagging estimator)
+    # and how many linear combinations each one splits on; AdaBoost tunes its base-tree depth,
+    # the number of rounds and the learning rate.
+    oblique_random_forest:
+      model__estimator__tree__max_depth:         {type: int, low: 2, high: 30}
+      model__estimator__tree__min_samples_leaf:  {type: int, low: 1, high: 200, log: true}
+      model__estimator__project__n_components:   {type: int, low: 3, high: 10}   # <= number of features
+    adaboost:
+      model__estimator__max_depth: {type: int,   low: 1,    high: 8}
+      model__n_estimators:         {type: int,   low: 25,   high: 400, log: true}
+      model__learning_rate:        {type: float, low: 0.01, high: 1.0, log: true}
+    # week 6 (boosting): both boosters tune the number of trees, the step size and the tree
+    # size together -- more trees can overfit, so small steps and shallow/narrow trees.
+    # (naive_bayes has nothing worth tuning here, so it has no search space: untuned only.)
+    gradient_boosting:
+      model__n_estimators:      {type: int,   low: 25,       high: 500, log: true}
+      model__learning_rate:     {type: float, low: 0.01,     high: 0.5, log: true}
+      model__max_depth:         {type: int,   low: 1,        high: 6}
+      model__min_samples_leaf:  {type: int,   low: 1,        high: 200, log: true}
+      model__subsample:         {type: float, low: 0.5,      high: 1.0}
+    hist_gradient_boosting:
+      model__max_iter:          {type: int,   low: 25,       high: 500, log: true}
+      model__learning_rate:     {type: float, low: 0.01,     high: 0.5, log: true}
+      model__max_leaf_nodes:    {type: int,   low: 2,        high: 63,  log: true}
+      model__min_samples_leaf:  {type: int,   low: 5,        high: 200, log: true}
+      model__l2_regularization: {type: float, low: 0.000001, high: 10.0, log: true}
+    # week 8 (XGBoost): the usual brakes plus XGBoost's own -- gamma (minimum gain to split),
+    # min_child_weight (minimum leaf weight), reg_alpha/reg_lambda (L1/L2), and column sampling.
+    xgboost:
+      model__n_estimators:      {type: int,   low: 50,    high: 600,  log: true}
+      model__learning_rate:     {type: float, low: 0.01,  high: 0.3,  log: true}
+      model__max_depth:         {type: int,   low: 1,     high: 8}
+      model__min_child_weight:  {type: float, low: 1.0,   high: 50.0, log: true}
+      model__subsample:         {type: float, low: 0.5,   high: 1.0}
+      model__colsample_bytree:  {type: float, low: 0.5,   high: 1.0}
+      model__reg_lambda:        {type: float, low: 0.01,  high: 10.0, log: true}
+      model__reg_alpha:         {type: float, low: 0.001, high: 10.0, log: true}
+      model__gamma:             {type: float, low: 0.0,   high: 5.0}
+
+# Week 8: feature selection as a learned Pipeline step between preprocessing and the model.
+# It looks at the labels, so it must be fit inside each fold (never before the split).
+# `min_votes` is a hyperparameter: when tuning is on, `search_space` joins the model's search
+# space and nested CV picks it honestly. Set enabled:false to run without selection.
+feature_selection:
+  enabled: true
+  min_votes: 2                                      # 1 (keep almost all) .. 3 (keep only unanimous)
+  random_state: 42
+  search_space:                                     # tuned together with the model when tuning is on
+    select__min_votes: {type: int, low: 1, high: 3}
+
+# The model main.py runs this time. Switch `type` (and params) to tune a different model;
+# compare_models.py tunes several at once into the README comparison table.
+model:
+  type: "xgboost"
+  params: {n_estimators: 300, learning_rate: 0.05, max_depth: 4, random_state: 42, n_jobs: -1}
+  # type options: dummy | logistic_regression | naive_bayes | decision_tree | random_forest |
+  #               oblique_random_forest | adaboost | gradient_boosting | hist_gradient_boosting | xgboost
+  # Other models' params, to swap in. class_weight "balanced" weights each class by 1 / its
+  # frequency (GradientBoostingClassifier and GaussianNB have no class_weight).
+  #   type: "gradient_boosting"      params: {random_state: 42}
+  #   type: "logistic_regression"    params: {max_iter: 2000, class_weight: balanced}
+  #   type: "naive_bayes"            params: {}
+  #   type: "decision_tree"          params: {random_state: 42, class_weight: balanced}
+  #   type: "random_forest"          params: {n_estimators: 200, random_state: 42, n_jobs: -1, class_weight: balanced}
+  #   type: "oblique_random_forest"  params: {n_estimators: 200, n_components: 10, random_state: 42, n_jobs: -1}
+  #   type: "adaboost"               params: {max_depth: 1, n_estimators: 200, learning_rate: 1.0, random_state: 42}
+  #   type: "hist_gradient_boosting" params: {random_state: 42, class_weight: balanced}
+
+output:
+  results_dir: "results_multiclass"
+  scoreboard: "results_multiclass/runs.csv"
